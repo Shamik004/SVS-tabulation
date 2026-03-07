@@ -1,0 +1,36 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Header Converter</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <a class="back-link" href="index.html">Back to marksheet types</a>
+    <h1>Processed Data Header Converter</h1>
+    <p class="subtitle">Upload the processed combined workbook and convert headers into your predefined automation format.</p>
+
+    <section class="controls">
+      <label for="fileInput" class="button">Choose Processed Excel</label>
+      <input id="fileInput" type="file" accept=".xlsx,.xls" />
+
+      <label for="sheetSelect">Converted Sheet:</label>
+      <select id="sheetSelect" disabled></select>
+
+      <button id="downloadBtn" type="button" disabled>Download Converted Excel</button>
+    </section>
+
+    <p id="status" class="status">No file loaded.</p>
+    <section id="summary" class="summary-panel"></section>
+
+    <section class="table-wrap">
+      <table id="excelTable"></table>
+    </section>
+  </main>
+
+  <script src="header-converter.js"></script>
+</body>
+</html>

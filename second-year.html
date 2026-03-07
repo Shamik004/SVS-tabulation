@@ -1,0 +1,37 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2nd Year Marksheet</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <a class="back-link" href="index.html">Back to marksheet types</a>
+    <h1>2nd Year & Lateral Marksheet Data Prep</h1>
+    <p class="subtitle">Upload one or more raw tabulation files. You can add files in multiple rounds; data keeps accumulating until you clear it.</p>
+
+    <section class="controls">
+      <label for="fileInput" class="button">Choose Raw Excel File(s)</label>
+      <input id="fileInput" type="file" accept=".xlsx,.xls" multiple />
+
+      <label for="sheetSelect">Generated Sheet:</label>
+      <select id="sheetSelect" disabled></select>
+
+      <button id="downloadBtn" type="button" disabled>Download Combined Excel</button>
+      <button id="clearBtn" type="button" disabled>Clear All Data</button>
+    </section>
+
+    <p id="status" class="status">No file loaded.</p>
+    <section id="summary" class="summary-panel"></section>
+
+    <section id="tableWrap" class="table-wrap">
+      <table id="excelTable"></table>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1st Year Marksheet</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <a class="back-link" href="index.html">Back to marksheet types</a>
+    <h1>1st Year Marksheet Data Prep</h1>
+    <p class="subtitle">Upload one or more 1st-year tabulation files. Data is processed sheet-wise without merging and accumulates across uploads.</p>
+
+    <section class="controls">
+      <label for="fileInput" class="button">Choose 1st Year File(s)</label>
+      <input id="fileInput" type="file" accept=".xlsx,.xls" multiple />
+
+      <label for="sheetSelect">Generated Sheet:</label>
+      <select id="sheetSelect" disabled></select>
+
+      <button id="downloadBtn" type="button" disabled>Download Combined Excel</button>
+      <button id="clearBtn" type="button" disabled>Clear All Data</button>
+    </section>
+
+    <p id="status" class="status">No file loaded.</p>
+    <section id="summary" class="summary-panel"></section>
+
+    <section class="table-wrap">
+      <table id="excelTable"></table>
+    </section>
+  </main>
+
+  <script src="first-year.js"></script>
+</body>
+</html>
