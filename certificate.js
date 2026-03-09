@@ -1,12 +1,13 @@
 ﻿const fileInput = document.getElementById("fileInput");
+const sessionCodeInput = document.getElementById("sessionCode");
 const downloadBtn = document.getElementById("downloadBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statusText = document.getElementById("status");
 const summaryPanel = document.getElementById("summary");
 const resultTable = document.getElementById("resultTable");
 
-if (fileInput && downloadBtn && clearBtn && statusText && summaryPanel && resultTable) {
-  const outputHeaders = ["NAME", "ENROLLMENT NO", "GRADE", "COURSE NAME", "SC CODE", "FILE NAME"];
+if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && summaryPanel && resultTable) {
+  const outputHeaders = ["CERTIFICATE NO", "NAME", "ENROLLMENT NO", "GRADE", "COURSE NAME", "SC CODE", "FILE NAME"];
   let extractedRows = [];
   let loadedFileCount = 0;
   let uploadHistory = [];
@@ -18,6 +19,13 @@ if (fileInput && downloadBtn && clearBtn && statusText && summaryPanel && result
       return;
     }
 
+    const sessionCode = normalizeSessionCode(sessionCodeInput.value);
+    if (!sessionCode) {
+      statusText.textContent = "Please enter Term Code first (example: JUNE25 or DEC25).";
+      fileInput.value = "";
+      return;
+    }
+
     let batchAdded = 0;
     let batchSucceeded = 0;
     let batchSkipped = 0;
@@ -26,7 +34,7 @@ if (fileInput && downloadBtn && clearBtn && statusText && summaryPanel && result
       try {
         const data = await file.arrayBuffer();
         const workbook = XLSX.read(data, { type: "array" });
-        const rows = extractRowsFromWorkbook(workbook, file.name);
+        const rows = extractRowsFromWorkbook(workbook, file.name, sessionCode);
 
         if (!rows.length) {
           batchSkipped += 1;
@@ -98,8 +106,10 @@ if (fileInput && downloadBtn && clearBtn && statusText && summaryPanel && result
     statusText.textContent = "All extracted data cleared.";
   });
 
-  function extractRowsFromWorkbook(workbook, sourceFileName) {
+  function extractRowsFromWorkbook(workbook, sourceFileName, sessionCode) {
     const rows = [];
+    const fileCourseCode = extractCourseCodeFromFileName(sourceFileName);
+    let serial = 1;
 
     workbook.SheetNames.forEach((sheetName) => {
       const worksheet = workbook.Sheets[sheetName];
@@ -114,6 +124,8 @@ if (fileInput && downloadBtn && clearBtn && statusText && summaryPanel && result
       const gradeCol = findGradeColumnIndex(headerRow);
       const courseName = extractCourseName(aoa, headerRowIndex);
       const scCode = extractScCode(aoa, headerRowIndex);
+      const sheetCourseCode = extractCourseCodeFromSheetName(sheetName);
+      const courseCode = fileCourseCode || sheetCourseCode || "UNKNOWN";
       const hasPaperRow = isPaperRow(aoa[headerRowIndex + 1] || []);
       const startRow = hasPaperRow ? headerRowIndex + 2 : headerRowIndex + 1;
 
@@ -148,11 +160,70 @@ if (fileInput && downloadBtn && clearBtn && statusText && summaryPanel && result
 
         sheetStarted = true;
         const grade = gradeCol >= 0 ? normalizeText(row[gradeCol]) : "";
-        rows.push([name, normalizeEnrollment(enrollmentRaw), grade, courseName, scCode, sourceFileName]);
+        const certificateNo = buildCertificateNo(courseCode, sessionCode, scCode, serial);
+
+        rows.push([
+          certificateNo,
+          name,
+          normalizeEnrollment(enrollmentRaw),
+          grade,
+          courseName,
+          scCode,
+          sourceFileName,
+        ]);
+
+        serial += 1;
       }
     });
 
     return rows;
+  }
+
+  function buildCertificateNo(courseCode, sessionCode, scCode, serial) {
+    const cleanCourse = normalizeText(courseCode).toUpperCase() || "UNKNOWN";
+    const cleanSession = normalizeSessionCode(sessionCode) || "SESSION";
+    const cleanSc = normalizeText(scCode).toUpperCase() || "NA";
+    const sequence = String(serial).padStart(3, "0");
+
+    return `C-${cleanCourse}/${cleanSession}/${cleanSc}/${sequence}`;
+  }
+
+  function extractCourseCodeFromFileName(fileName) {
+    const base = normalizeText(fileName).toUpperCase().replace(/\.[^.]+$/, "");
+    if (!base) {
+      return "";
+    }
+
+    const strongMatch = base.match(/\b[A-Z]{3,}-[A-Z]\b/);
+    if (strongMatch) {
+      return strongMatch[0];
+    }
+
+    const tokens = base.split(/[^A-Z0-9-]+/).filter((token) => token);
+    const stopWords = new Set(["TABULATION", "SHEET", "YEAR", "FIRST", "SECOND", "ALL", "DECEMBER", "JUNE", "MARKSHEET", "FILE", "PIMT", "KHATRA"]);
+
+    for (const token of tokens) {
+      if (stopWords.has(token)) {
+        continue;
+      }
+
+      if (/^[A-Z]{4,}(-[A-Z])?$/.test(token)) {
+        return token;
+      }
+    }
+
+    return "";
+  }
+
+  function extractCourseCodeFromSheetName(sheetName) {
+    const codeRaw = normalizeText(sheetName).split("(")[0].trim().replace(/[.\-\s_]+$/, "");
+    const compact = codeRaw.replace(/\s+/g, "").toUpperCase();
+
+    if (/^[A-Z]{4,}(-[A-Z])?$/.test(compact)) {
+      return compact;
+    }
+
+    return "";
   }
 
   function findHeaderRowIndex(rows) {
@@ -217,9 +288,9 @@ if (fileInput && downloadBtn && clearBtn && statusText && summaryPanel && result
         return normalizeText(codeMatch[1]).toUpperCase();
       }
 
-      const slashMatch = line.match(/\b([A-Za-z]-\d+)\b/);
-      if (slashMatch) {
-        return normalizeText(slashMatch[1]).toUpperCase();
+      const looseMatch = line.match(/\b([A-Za-z]-\d+)\b/);
+      if (looseMatch) {
+        return normalizeText(looseMatch[1]).toUpperCase();
       }
     }
 
@@ -289,6 +360,10 @@ if (fileInput && downloadBtn && clearBtn && statusText && summaryPanel && result
     }
 
     return String(value).trim();
+  }
+
+  function normalizeSessionCode(value) {
+    return normalizeText(value).toUpperCase().replace(/\s+/g, "");
   }
 
   function normalizeEnrollment(value) {
