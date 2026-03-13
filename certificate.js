@@ -1,14 +1,19 @@
 ﻿const fileInput = document.getElementById("fileInput");
 const sessionCodeInput = document.getElementById("sessionCode");
+const courseSheetSelect = document.getElementById("courseSheetSelect");
 const downloadBtn = document.getElementById("downloadBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statusText = document.getElementById("status");
 const summaryPanel = document.getElementById("summary");
 const resultTable = document.getElementById("resultTable");
 
-if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && summaryPanel && resultTable) {
+if (fileInput && sessionCodeInput && courseSheetSelect && downloadBtn && clearBtn && statusText && summaryPanel && resultTable) {
+  const errorSheetKey = "__ERRORS__";
   const outputHeaders = ["CERTIFICATE NO", "NAME", "ENROLLMENT NO", "GRADE", "COURSE NAME", "SC CODE", "FILE NAME"];
   let extractedRows = [];
+  let courseSheetRows = new Map();
+  let errorRows = [];
+  let activeCourseCode = "";
   let loadedFileCount = 0;
   let uploadHistory = [];
 
@@ -68,6 +73,7 @@ if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && su
     }
 
     uploadHistory = uploadHistory.slice(0, 20);
+    rebuildPreparedSheets();
     renderTable();
     renderSummary();
 
@@ -83,22 +89,46 @@ if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && su
     fileInput.value = "";
   });
 
+  courseSheetSelect.addEventListener("change", () => {
+    activeCourseCode = normalizeText(courseSheetSelect.value);
+    renderTable();
+    renderSummary();
+  });
+
   downloadBtn.addEventListener("click", () => {
     if (!extractedRows.length) {
       return;
     }
 
     const outputBook = XLSX.utils.book_new();
-    const aoa = [outputHeaders, ...extractedRows];
-    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
-    XLSX.utils.book_append_sheet(outputBook, worksheet, "Certificates");
+    const usedSheetNames = new Set();
+    const sortedCourseCodes = Array.from(courseSheetRows.keys()).sort((a, b) => a.localeCompare(b));
+
+    sortedCourseCodes.forEach((courseCode) => {
+      const rows = courseSheetRows.get(courseCode) || [];
+      const sheetName = safeUniqueSheetName(courseCode || "UNKNOWN", usedSheetNames);
+      const aoa = [outputHeaders, ...rows];
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(outputBook, worksheet, sheetName);
+    });
+
+    if (errorRows.length) {
+      const errorSheetName = safeUniqueSheetName("errors", usedSheetNames);
+      const errorSheet = XLSX.utils.aoa_to_sheet([outputHeaders, ...errorRows]);
+      XLSX.utils.book_append_sheet(outputBook, errorSheet, errorSheetName);
+    }
+
     XLSX.writeFile(outputBook, "certificate_data.xlsx");
   });
 
   clearBtn.addEventListener("click", () => {
     extractedRows = [];
+    courseSheetRows = new Map();
+    errorRows = [];
+    activeCourseCode = "";
     loadedFileCount = 0;
     uploadHistory = [];
+    renderCourseSheetSelect();
     renderTable();
     renderSummary();
     downloadBtn.disabled = true;
@@ -108,10 +138,14 @@ if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && su
 
   function extractRowsFromWorkbook(workbook, sourceFileName, sessionCode) {
     const rows = [];
-    const fileCourseCode = extractCourseCodeFromFileName(sourceFileName);
     let serial = 1;
 
     workbook.SheetNames.forEach((sheetName) => {
+      const yearType = detectSheetYearType(sheetName);
+      if (yearType === "first") {
+        return;
+      }
+
       const worksheet = workbook.Sheets[sheetName];
       const aoa = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
       const headerRowIndex = findHeaderRowIndex(aoa);
@@ -125,7 +159,7 @@ if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && su
       const courseName = extractCourseName(aoa, headerRowIndex);
       const scCode = extractScCode(aoa, headerRowIndex);
       const sheetCourseCode = extractCourseCodeFromSheetName(sheetName);
-      const courseCode = fileCourseCode || sheetCourseCode || "UNKNOWN";
+      const courseCode = sheetCourseCode || "UNKNOWN";
       const hasPaperRow = isPaperRow(aoa[headerRowIndex + 1] || []);
       const startRow = hasPaperRow ? headerRowIndex + 2 : headerRowIndex + 1;
 
@@ -179,6 +213,69 @@ if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && su
     return rows;
   }
 
+  function groupRowsByCourseCode(rows) {
+    const grouped = new Map();
+
+    rows.forEach((row) => {
+      const certificateNo = normalizeText(row[0]);
+      const courseCode = extractCourseCodeFromCertificateNo(certificateNo) || "UNKNOWN";
+
+      if (!grouped.has(courseCode)) {
+        grouped.set(courseCode, []);
+      }
+
+      grouped.get(courseCode).push(row);
+    });
+
+    return grouped;
+  }
+
+  function splitRowsByGrade(rows) {
+    const validRows = [];
+    const missingGradeRows = [];
+
+    rows.forEach((row) => {
+      const grade = normalizeText(row[3]).toUpperCase();
+      if (grade && grade !== "--") {
+        validRows.push(row);
+      } else {
+        missingGradeRows.push(row);
+      }
+    });
+
+    return { validRows, missingGradeRows };
+  }
+
+  function extractCourseCodeFromCertificateNo(certificateNo) {
+    const text = normalizeText(certificateNo).toUpperCase();
+    if (!text) {
+      return "";
+    }
+
+    const match = text.match(/^C-([^/]+)/);
+    return match ? match[1] : "";
+  }
+
+  function safeUniqueSheetName(rawName, usedNames) {
+    const cleaned = normalizeText(rawName)
+      .replace(/[\\/?*\[\]:]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const base = (cleaned || "COURSE").slice(0, 31);
+    let candidate = base;
+    let count = 1;
+
+    while (usedNames.has(candidate.toLowerCase())) {
+      const suffix = `_${count}`;
+      const maxBase = Math.max(1, 31 - suffix.length);
+      candidate = `${base.slice(0, maxBase)}${suffix}`;
+      count += 1;
+    }
+
+    usedNames.add(candidate.toLowerCase());
+    return candidate;
+  }
+
   function buildCertificateNo(courseCode, sessionCode, scCode, serial) {
     const cleanCourse = normalizeText(courseCode).toUpperCase() || "UNKNOWN";
     const cleanSession = normalizeSessionCode(sessionCode) || "SESSION";
@@ -188,39 +285,39 @@ if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && su
     return `C-${cleanCourse}/${cleanSession}/${cleanSc}/${sequence}`;
   }
 
-  function extractCourseCodeFromFileName(fileName) {
-    const base = normalizeText(fileName).toUpperCase().replace(/\.[^.]+$/, "");
-    if (!base) {
-      return "";
+  function detectSheetYearType(sheetName) {
+    const text = normalizeText(sheetName).toUpperCase();
+    if (!text) {
+      return "unknown";
     }
 
-    const strongMatch = base.match(/\b[A-Z]{3,}-[A-Z]\b/);
-    if (strongMatch) {
-      return strongMatch[0];
+    if (/\b(2ND|SECOND)\s*YEAR\b/.test(text)) {
+      return "second";
     }
 
-    const tokens = base.split(/[^A-Z0-9-]+/).filter((token) => token);
-    const stopWords = new Set(["TABULATION", "SHEET", "YEAR", "FIRST", "SECOND", "ALL", "DECEMBER", "JUNE", "MARKSHEET", "FILE", "PIMT", "KHATRA"]);
-
-    for (const token of tokens) {
-      if (stopWords.has(token)) {
-        continue;
-      }
-
-      if (/^[A-Z]{4,}(-[A-Z])?$/.test(token)) {
-        return token;
-      }
+    if (/\b(1ST|FIRST)\s*YEAR\b/.test(text)) {
+      return "first";
     }
 
-    return "";
+    return "unknown";
   }
 
   function extractCourseCodeFromSheetName(sheetName) {
-    const codeRaw = normalizeText(sheetName).split("(")[0].trim().replace(/[.\-\s_]+$/, "");
-    const compact = codeRaw.replace(/\s+/g, "").toUpperCase();
+    const cleaned = normalizeText(sheetName)
+      .toUpperCase()
+      .replace(/\(\s*(1ST|FIRST|2ND|SECOND)\s*YEAR\s*\)/g, " ")
+      .replace(/\b(1ST|FIRST|2ND|SECOND)\s*YEAR\b/g, " ")
+      .trim();
 
-    if (/^[A-Z]{4,}(-[A-Z])?$/.test(compact)) {
-      return compact;
+    if (!cleaned) {
+      return "";
+    }
+
+    const tokens = cleaned.split(/[^A-Z0-9-]+/).filter((token) => token);
+    for (const token of tokens) {
+      if (/^[A-Z]{3,}(-[A-Z])?$/.test(token)) {
+        return token;
+      }
     }
 
     return "";
@@ -301,8 +398,76 @@ if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && su
     return row.some((cell) => normalizeText(cell).toUpperCase().includes("PAPER"));
   }
 
+  function rebuildPreparedSheets() {
+    const split = splitRowsByGrade(extractedRows);
+    courseSheetRows = groupRowsByCourseCode(split.validRows);
+    errorRows = split.missingGradeRows;
+    const availableCourseCodes = Array.from(courseSheetRows.keys()).sort((a, b) => a.localeCompare(b));
+
+    if (activeCourseCode === errorSheetKey && errorRows.length) {
+      renderCourseSheetSelect();
+      return;
+    }
+
+    if (!activeCourseCode || !courseSheetRows.has(activeCourseCode)) {
+      if (availableCourseCodes.length) {
+        activeCourseCode = availableCourseCodes[0];
+      } else if (errorRows.length) {
+        activeCourseCode = errorSheetKey;
+      } else {
+        activeCourseCode = "";
+      }
+    }
+
+    renderCourseSheetSelect();
+  }
+
+  function renderCourseSheetSelect() {
+    courseSheetSelect.innerHTML = "";
+
+    if (!courseSheetRows.size && !errorRows.length) {
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = "No course sheets";
+      courseSheetSelect.appendChild(emptyOption);
+      courseSheetSelect.disabled = true;
+      return;
+    }
+
+    const courseCodes = Array.from(courseSheetRows.keys()).sort((a, b) => a.localeCompare(b));
+    courseCodes.forEach((courseCode) => {
+      const option = document.createElement("option");
+      option.value = courseCode;
+      option.textContent = `${courseCode} (${(courseSheetRows.get(courseCode) || []).length})`;
+      if (courseCode === activeCourseCode) {
+        option.selected = true;
+      }
+      courseSheetSelect.appendChild(option);
+    });
+
+    if (errorRows.length) {
+      const errorOption = document.createElement("option");
+      errorOption.value = errorSheetKey;
+      errorOption.textContent = `errors (${errorRows.length})`;
+      if (activeCourseCode === errorSheetKey) {
+        errorOption.selected = true;
+      }
+      courseSheetSelect.appendChild(errorOption);
+    }
+
+    courseSheetSelect.disabled = false;
+  }
+
   function renderTable() {
-    if (!extractedRows.length) {
+    if (!extractedRows.length || (!courseSheetRows.size && !errorRows.length)) {
+      resultTable.innerHTML = "";
+      return;
+    }
+
+    const rowsToRender = activeCourseCode === errorSheetKey
+      ? errorRows
+      : ((activeCourseCode && courseSheetRows.get(activeCourseCode)) || []);
+    if (!rowsToRender.length) {
       resultTable.innerHTML = "";
       return;
     }
@@ -319,7 +484,7 @@ if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && su
     tableHead.appendChild(headerRow);
 
     const tableBody = document.createElement("tbody");
-    extractedRows.forEach((row) => {
+    rowsToRender.forEach((row) => {
       const tr = document.createElement("tr");
       row.forEach((value) => {
         const td = document.createElement("td");
@@ -348,6 +513,9 @@ if (fileInput && sessionCodeInput && downloadBtn && clearBtn && statusText && su
       <ul>
         <li><strong>Loaded files:</strong> ${loadedFileCount}</li>
         <li><strong>Total records:</strong> ${extractedRows.length}</li>
+        <li><strong>Course sheets prepared:</strong> ${courseSheetRows.size}</li>
+        <li><strong>Error rows (missing grade):</strong> ${errorRows.length}</li>
+        <li><strong>Viewing sheet:</strong> ${escapeHtml(activeCourseCode === errorSheetKey ? "errors" : (activeCourseCode || "None"))}</li>
       </ul>
       <h2>Recent Uploads</h2>
       <ul>${recentUploads || "<li>No uploads yet.</li>"}</ul>
