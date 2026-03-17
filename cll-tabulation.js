@@ -523,10 +523,14 @@ if (fileInput && sheetSelect && downloadBtn && clearBtn && statusText && summary
   }
 
   function safeSheetName(name) {
-    return safeExcelText(name)
+    const cleaned = safeExcelText(name)
+      .replace(/\s+/g, " ")
       .replace(/[\\/?*\[\]:]/g, " ")
       .replace(/^[\s'"]+|[\s'"]+$/g, "")
-      .slice(0, 31) || "Sheet";
+      .trim();
+
+    const truncated = cleaned.slice(0, 31).replace(/^[\s'"]+|[\s'"]+$/g, "").trim();
+    return truncated || "Sheet";
   }
 
   function safeUniqueSheetName(name, usedSheetNames) {
@@ -564,9 +568,45 @@ if (fileInput && sheetSelect && downloadBtn && clearBtn && statusText && summary
     return normalizeText(value).replace(/\s+/g, " ").toUpperCase();
   }
 
-  // Remove control characters that make Excel mark files as corrupted.
+  // Keep only characters valid for XML 1.0 + Excel; also cap cell text length.
   function safeExcelText(value) {
-    return normalizeText(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, "");
+    const text = normalizeText(value);
+    let output = "";
+
+    for (const ch of text) {
+      const cp = ch.codePointAt(0);
+      if (cp === undefined) {
+        continue;
+      }
+
+      const isAllowedXmlChar =
+        cp === 0x9 ||
+        cp === 0xa ||
+        cp === 0xd ||
+        (cp >= 0x20 && cp <= 0xd7ff) ||
+        (cp >= 0xe000 && cp <= 0xfffd) ||
+        (cp >= 0x10000 && cp <= 0x10ffff);
+
+      if (!isAllowedXmlChar) {
+        continue;
+      }
+
+      const isC1Control = cp >= 0x7f && cp <= 0x9f;
+      const isNonCharacter = (cp >= 0xfdd0 && cp <= 0xfdef) || (cp & 0xfffe) === 0xfffe;
+
+      if (isC1Control || isNonCharacter) {
+        continue;
+      }
+
+      output += ch;
+    }
+
+    // Excel cell text hard limit.
+    if (output.length > 32767) {
+      return output.slice(0, 32767);
+    }
+
+    return output;
   }
 
   function roundNumericText(value) {
