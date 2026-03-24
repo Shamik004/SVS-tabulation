@@ -129,6 +129,7 @@ if (fileInput && sheetSelect && downloadBtn && clearBtn && statusText && summary
 
       const centreName = findValueAfterLabel(rows, /CENT(RE|ER)\s*NAME/i, headerInfo.rowIndex);
       const centreCode = findValueAfterLabel(rows, /CENT(RE|ER)\s*CODE/i, headerInfo.rowIndex);
+      const batch = findValueAfterLabel(rows, /BATCH\s*-/i, headerInfo.rowIndex);
       const course = findValueAfterLabel(rows, /COURSE\s*-/i, headerInfo.rowIndex, /COURSE\s*DURATION/i);
 
       const paperNames = extractPaperNames(rows, headerInfo.rowIndex);
@@ -154,6 +155,7 @@ if (fileInput && sheetSelect && downloadBtn && clearBtn && statusText && summary
           grade: student.grade,
           centreName,
           centreCode,
+          batch,
           course,
           fileName: sourceFileName,
           sheetName,
@@ -363,6 +365,7 @@ if (fileInput && sheetSelect && downloadBtn && clearBtn && statusText && summary
       "GRADE",
       "CENTRE NAME",
       "CENTRE CODE",
+      "BATCH",
       "COURSE",
       "FILE NAME",
       "SHEET NAME"
@@ -390,6 +393,7 @@ if (fileInput && sheetSelect && downloadBtn && clearBtn && statusText && summary
       safeExcelText(record.grade),
       safeExcelText(record.centreName),
       safeExcelText(record.centreCode),
+      safeExcelText(record.batch),
       safeExcelText(record.course),
       safeExcelText(record.fileName),
       safeExcelText(record.sheetName)
